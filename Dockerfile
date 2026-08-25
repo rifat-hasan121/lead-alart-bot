@@ -1,24 +1,28 @@
 FROM mcr.microsoft.com/playwright:v1.46.0-jammy
 
-# Set working directory
+# Node.js 22 (LTS) ইনস্টল করা
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /usr/src/app
 
-# 1. Copy package files and install dependencies
+# ডিপেনডেন্সি ফাইল কপি
 COPY package*.json ./
+
+# প্যাকেজ ইনস্টল
 RUN npm install
 
-# 2. Copy prisma configuration & schema and generate Prisma Client
-COPY prisma.config.ts ./
+# প্রিজমা ও সোর্স ফাইল কপি
 COPY prisma ./prisma/
-RUN npx prisma generate
-
-# 3. Copy all remaining source/config files
 COPY tsconfig.json ./
-COPY cookies.json* ./
 COPY src ./src/
+COPY cookies.json ./
 
-# 4. Build TypeScript application
+# প্রিজমা ক্লায়েন্ট জেনারেট ও বিল্ড
+RUN npx prisma generate
 RUN npm run build
 
-# 5. Run the compiled bot in production
+# প্রজেক্ট রান
 CMD ["node", "dist/index.js"]
