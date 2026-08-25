@@ -3,19 +3,22 @@ FROM mcr.microsoft.com/playwright:v1.46.0-jammy
 # Set working directory
 WORKDIR /usr/src/app
 
-# Copy dependency definitions and config files
-COPY package*.json tsconfig.json prisma.config.ts cookies.json* ./
+# 1. Copy package files and install dependencies
+COPY package*.json ./
+RUN npm install
 
-# Install packages clean
-RUN npm ci
-
-# Copy source configurations and prisma schema
+# 2. Copy prisma configuration & schema and generate Prisma Client
+COPY prisma.config.ts ./
 COPY prisma ./prisma/
+RUN npx prisma generate
+
+# 3. Copy all remaining source/config files
+COPY tsconfig.json ./
+COPY cookies.json* ./
 COPY src ./src/
 
-# Generate Prisma Client and compile TypeScript
-RUN npx prisma generate
+# 4. Build TypeScript application
 RUN npm run build
 
-# Run the compiled bot in production
+# 5. Run the compiled bot in production
 CMD ["node", "dist/index.js"]
