@@ -1,3 +1,4 @@
+import http from 'http';
 import { createBrowserContext, verifySession } from './scrapers/sessionManager.js';
 import { scrapeGroupFeed, checkLeadMatch } from './scrapers/groupScraper.js';
 import { sendLeadAlert } from './services/telegramService.js';
@@ -6,6 +7,15 @@ import { sleep } from './utils/index.js';
 
 async function main() {
   console.log(`[${new Date().toISOString()}] INFO: Facebook Group Web Lead Monitoring Bot started.`);
+
+  // Start lightweight HTTP health check server for Render.com
+  const PORT = process.env.PORT || 3000;
+  http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));
+  }).listen(PORT, () => {
+    console.log(`[${new Date().toISOString()}] INFO: Health Check Server listening on port ${PORT}`);
+  });
   
   while (true) {
     console.log(`\n[${new Date().toISOString()}] INFO: --- Starting check cycle ---`);

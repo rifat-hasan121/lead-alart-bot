@@ -38,7 +38,14 @@ export async function createBrowserContext(headless = true) {
 
   // Attempt to load existing cookies
   try {
-    const cookiesData = await fs.readFile(config.fbCookiePath, 'utf-8');
+    let cookiesData = '';
+    if (process.env.FB_COOKIES_JSON) {
+      cookiesData = process.env.FB_COOKIES_JSON;
+      console.log('Session Manager: Loaded Facebook cookies from environment variable.');
+    } else {
+      cookiesData = await fs.readFile(config.fbCookiePath, 'utf-8');
+      console.log('Session Manager: Loaded Facebook cookies from file.');
+    }
     const rawCookies = JSON.parse(cookiesData);
     
     const mappedCookies = Array.isArray(rawCookies) ? rawCookies.map((cookie: any) => {
