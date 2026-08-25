@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: fb_leads_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: fb_leads_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  bot:
+    build: .
+    container_name: fb_lead_bot
+    restart: always
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    environment:
+      # Override DB url to point to postgres service container in the internal network
+      DATABASE_URL: "postgresql://postgres:password123@postgres:5432/fb_leads_db?schema=public"
+    volumes:
+      - ./cookies.json:/usr/src/app/cookies.json
+
+volumes:
+  pgdata:

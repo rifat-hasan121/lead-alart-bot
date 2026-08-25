@@ -1,0 +1,38 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model MonitoredGroup {
+  id        String   @id @default(uuid())
+  name      String
+  groupUrl  String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model TrackedPost {
+  id          String    @id @default(uuid())
+  fbPostId    String    @unique
+  groupUrl    String
+  authorName  String
+  content     String
+  postUrl     String
+  isMatched   Boolean   @default(false)
+  notifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model Keyword {
+  id       String  @id @default(uuid())
+  phrase   String  @unique
+  type     String  @default("role") // "role", "intent", "negative"
+  isActive Boolean @default(true)
+}
