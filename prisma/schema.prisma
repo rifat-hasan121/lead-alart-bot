@@ -19,15 +19,16 @@ model MonitoredGroup {
 }
 
 model TrackedPost {
-  id          String    @id @default(uuid())
-  fbPostId    String    @unique
-  groupUrl    String
-  authorName  String
-  content     String
-  postUrl     String
-  isMatched   Boolean   @default(false)
-  notifiedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  id            String    @id @default(uuid())
+  fbPostId      String    @unique
+  groupUrl      String
+  authorName    String
+  content       String
+  postUrl       String
+  isMatched     Boolean   @default(false)
+  notifiedAt    DateTime?
+  postCreatedAt DateTime?
+  createdAt     DateTime  @default(now())
 }
 
 model Keyword {

@@ -85,6 +85,7 @@ async function main() {
                         content: post.content,
                         postUrl: post.postUrl,
                         isMatched: true,
+                        postCreatedAt: post.postCreatedAt,
                       },
                     });
                     
@@ -96,6 +97,8 @@ async function main() {
                       matchedKeywords: [...matchResult.matchedRoles, ...matchResult.matchedIntents],
                       content: post.content,
                       postUrl: post.postUrl,
+                      postCreatedAt: post.postCreatedAt,
+                      rawTimestampText: post.rawTimestampText,
                     });
                   }
                 }

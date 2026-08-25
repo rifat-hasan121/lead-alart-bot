@@ -7,6 +7,8 @@ export interface ExtractedPost {
   authorName: string;
   content: string;
   postUrl: string;
+  postCreatedAt?: Date;
+  rawTimestampText?: string;
 }
 
 /**
@@ -14,6 +16,95 @@ export interface ExtractedPost {
  */
 export function normalizeText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Helper to parse a time part (e.g. "11:24 AM", "16:30") on top of a base date.
+ */
+function parseTimePart(baseDate: Date, timeStr: string): Date | null {
+  try {
+    const cleanTime = timeStr.trim();
+    const match = cleanTime.match(/^(\d+):(\d+)\s*(am|pm)?/i);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const ampm = match[3];
+
+      if (ampm) {
+        if (ampm.toLowerCase() === 'pm' && hours < 12) hours += 12;
+        if (ampm.toLowerCase() === 'am' && hours === 12) hours = 0;
+      }
+      
+      const newDate = new Date(baseDate);
+      newDate.setHours(hours, minutes, 0, 0);
+      return newDate;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+  return null;
+}
+
+/**
+ * Parses relative and absolute Facebook timestamp texts into a Javascript Date object.
+ */
+export function parseFacebookTimestamp(text: string): Date {
+  const now = new Date();
+  const cleanText = text.trim().toLowerCase();
+
+  if (!cleanText || cleanText.includes('just now') || cleanText === 'now') {
+    return now;
+  }
+
+  // Check for relative minutes: e.g. "5 mins", "5m", "1 min"
+  const minMatch = cleanText.match(/^(\d+)\s*(m|min|mins|minute|minutes)/);
+  if (minMatch) {
+    const mins = parseInt(minMatch[1], 10);
+    return new Date(now.getTime() - mins * 60 * 1000);
+  }
+
+  // Check for relative hours: e.g. "1h", "2 hrs", "2 hrs ago", "2h"
+  const hourMatch = cleanText.match(/^(\d+)\s*(h|hr|hrs|hour|hours)/);
+  if (hourMatch) {
+    const hours = parseInt(hourMatch[1], 10);
+    return new Date(now.getTime() - hours * 60 * 60 * 1000);
+  }
+
+  // Check for relative days: e.g. "1d", "2d", "2 days"
+  const dayMatch = cleanText.match(/^(\d+)\s*(d|day|days)/);
+  if (dayMatch) {
+    const days = parseInt(dayMatch[1], 10);
+    return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  }
+
+  // Check for "Yesterday at 4:32 PM"
+  if (cleanText.includes('yesterday')) {
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const timePart = cleanText.split('at')[1];
+    if (timePart) {
+      const parsedTime = parseTimePart(yesterday, timePart);
+      if (parsedTime) return parsedTime;
+    }
+    return yesterday;
+  }
+
+  // Parse absolute dates (e.g., "August 22 at 11:24 AM")
+  let standardDateStr = cleanText.replace(/\bat\b/g, ' ');
+  
+  const hasYear = /\b20\d{2}\b/.test(standardDateStr);
+  if (!hasYear) {
+    standardDateStr = `${standardDateStr} ${now.getFullYear()}`;
+  }
+
+  const parsedDate = new Date(standardDateStr);
+  if (!isNaN(parsedDate.getTime())) {
+    if (parsedDate.getTime() > now.getTime() + 24 * 60 * 60 * 1000) {
+      parsedDate.setFullYear(parsedDate.getFullYear() - 1);
+    }
+    return parsedDate;
+  }
+
+  return now;
 }
 
 /**
@@ -81,6 +172,34 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
   // Wait for initial load
   await sleep(4000);
 
+  // Try to force "New posts" sorting if not already selected
+  try {
+    const dropdownTrigger = page.locator('div[role="feed"] [role="button"]:has-text("Most relevant"), div[role="feed"] [role="button"]:has-text("Recent activity"), [role="button"]:has-text("Most relevant"), [role="button"]:has-text("Recent activity")').first();
+    if (await dropdownTrigger.isVisible()) {
+      console.log('[Group Scraper] Sorting dropdown trigger detected. Clicking to select chronological...');
+      await dropdownTrigger.click();
+      await page.waitForTimeout(1500);
+      
+      const newPostsOption = page.locator('[role="menuitem"] span:has-text("New posts"), [role="menuitem"] span:has-text("Recent activity"), [role="menuitem"] span:has-text("Recent Activity")').first();
+      if (await newPostsOption.isVisible()) {
+        await newPostsOption.click();
+        console.log('[Group Scraper] Selected "New posts" / "Recent activity" sorting option.');
+        await page.waitForTimeout(3000);
+      } else {
+        const generalOption = page.locator('span:has-text("New posts"), span:has-text("Recent activity")').first();
+        if (await generalOption.isVisible()) {
+          await generalOption.click();
+          console.log('[Group Scraper] Selected general sorting option.');
+          await page.waitForTimeout(3000);
+        } else {
+          await page.keyboard.press('Escape');
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Group Scraper] Non-blocking warning: Could not adjust sorting dropdown selector:', e);
+  }
+
   // Human-like scrolling loop (scrolling down 3 times)
   console.log('[Group Scraper] Scrolling down feed to fetch recent activity...');
   const scrolls = 3;
@@ -99,14 +218,17 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
   const articles = await page.$$('div[role="article"]');
   console.log(`[Group Scraper] Found ${articles.length} article elements. Parsing posts...`);
 
+  let oldPostCount = 0;
+
   for (const article of articles) {
     try {
       const links = await article.$$('a');
       let postUrl = '';
       let fbPostId = '';
       let authorName = 'Unknown';
+      let timestampText = '';
 
-      // 1. Find the post ID and URL
+      // 1. Find the post ID, URL and raw timestamp text from permalink links
       for (const link of links) {
         const href = await link.getAttribute('href');
         if (!href) continue;
@@ -127,11 +249,45 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
           } else if (multiMatch) {
             fbPostId = multiMatch[1];
           }
+
+          // Extract timestamp text from permalink link
+          const ariaLabel = await link.getAttribute('aria-label');
+          const innerText = (await link.innerText()).trim();
+          timestampText = ariaLabel || innerText;
         }
       }
 
       // Skip parsing if we can't reliably isolate the Facebook Post ID
       if (!fbPostId) continue;
+
+      // Fallback: check for standard <abbr> elements inside this article if timestampText is empty
+      if (!timestampText) {
+        const abbr = await article.$('abbr');
+        if (abbr) {
+          const innerText = (await abbr.innerText()).trim();
+          const titleText = await abbr.getAttribute('title');
+          timestampText = innerText || titleText || '';
+        }
+      }
+
+      // Parse timestamp into standardised Date object
+      const postCreatedAt = parseFacebookTimestamp(timestampText);
+      const ageInMs = Date.now() - postCreatedAt.getTime();
+      const ageInHours = ageInMs / (1000 * 60 * 60);
+
+      // AGE FILTER: Ignore if older than 24 hours (1 day)
+      if (ageInHours > 24) {
+        oldPostCount++;
+        console.log(`[Group Scraper] Skipping post ${fbPostId} - published ${ageInHours.toFixed(1)} hours ago (older than 24 hours). Timestamp: "${timestampText}"`);
+        
+        if (oldPostCount >= 5) {
+          console.log(`[Group Scraper] Reached 5 consecutive posts older than 24h. Stopping scroll for this group.`);
+          break;
+        }
+        continue;
+      } else {
+        oldPostCount = 0;
+      }
 
       // 2. Find Author Name
       for (const link of links) {
@@ -165,6 +321,8 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
         authorName,
         content,
         postUrl: postUrl || `${groupUrl}/posts/${fbPostId}`,
+        postCreatedAt,
+        rawTimestampText: timestampText,
       });
     } catch (e) {
       console.error('[Group Scraper] Error extracting post details:', e);
@@ -226,6 +384,7 @@ export async function monitorActiveGroups(page: Page) {
                 content: post.content,
                 postUrl: post.postUrl,
                 isMatched: true,
+                postCreatedAt: post.postCreatedAt,
               },
             });
             console.log(`[Group Scraper] Database saved new matched lead: ${post.fbPostId}`);

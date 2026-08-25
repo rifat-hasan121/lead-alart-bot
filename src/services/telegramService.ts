@@ -10,6 +10,8 @@ export interface LeadAlertData {
   matchedKeywords: string[];
   content: string;
   postUrl: string;
+  postCreatedAt?: Date;
+  rawTimestampText?: string;
 }
 
 /**
@@ -20,6 +22,21 @@ function escapeMarkdown(text: string): string {
     .replace(/\*/g, '\\*')
     .replace(/_/g, '\\_')
     .replace(/`/g, '\\`');
+}
+
+/**
+ * Formats a JavaScript Date to local string representation.
+ */
+function formatDate(date: Date): string {
+  const options: Intl.DateTimeFormatOptions = {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  };
+  return date.toLocaleString('en-US', options);
 }
 
 /**
@@ -40,11 +57,20 @@ export async function sendLeadAlert(data: LeadAlertData): Promise<boolean> {
   const escapedKeywords = data.matchedKeywords.map(escapeMarkdown).join(', ');
   const escapedSnippet = escapeMarkdown(snippet);
 
+  let timeStr = 'Unknown';
+  if (data.postCreatedAt) {
+    const formattedDate = formatDate(data.postCreatedAt);
+    timeStr = data.rawTimestampText 
+      ? `${formattedDate} (${data.rawTimestampText})`
+      : formattedDate;
+  }
+
   const message = [
     `🚨 *New Web Lead Found!*`,
     ``,
     `👥 *Group:* [${escapedGroupName}](${data.groupUrl})`,
     `👤 *Author:* ${escapedAuthorName}`,
+    `🕒 *Posted At:* ${escapeMarkdown(timeStr)}`,
     `🔍 *Matched Keywords:* \`${escapedKeywords}\``,
     `📝 *Snippet:* _"${escapedSnippet}"_`,
     ``,
