@@ -18,7 +18,6 @@ RUN npm install
 COPY prisma ./prisma/
 COPY tsconfig.json ./
 COPY src ./src/
-COPY cookies.json ./
 
 # প্রিজমা ক্লায়েন্ট জেনারেট ও বিল্ড
 RUN npx prisma generate
