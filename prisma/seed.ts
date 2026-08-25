@@ -30,7 +30,7 @@ async function main() {
   for (const item of allKeywords) {
     await prisma.keyword.upsert({
       where: { phrase: item.phrase },
-      update: { type: item.type },
+      update: { type: item.type, isActive: true }, // এখানে isActive: true নিশ্চিত করা হলো
       create: { phrase: item.phrase, type: item.type, isActive: true },
     });
   }
@@ -70,7 +70,7 @@ async function main() {
   for (const group of sampleGroups) {
     await prisma.monitoredGroup.upsert({
       where: { groupUrl: group.groupUrl },
-      update: { name: group.name },
+      update: { name: group.name, isActive: true }, // এখানেও isActive: true নিশ্চিত করা হলো
       create: {
         name: group.name,
         groupUrl: group.groupUrl,
