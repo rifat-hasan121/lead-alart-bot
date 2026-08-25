@@ -53,8 +53,8 @@ async function test() {
       // Find matches for negatives to display
       const normalized = tc.text.toLowerCase();
       const negativesMatched = keywords
-        .filter(k => k.type === 'negative' && normalized.includes(k.phrase.toLowerCase()))
-        .map(k => k.phrase);
+        .filter((k: any) => k.type === 'negative' && normalized.includes(k.phrase.toLowerCase()))
+        .map((k: any) => k.phrase);
       if (negativesMatched.length > 0) {
         console.log(`  Blocked by Negatives: ${negativesMatched.join(', ')}`);
       }

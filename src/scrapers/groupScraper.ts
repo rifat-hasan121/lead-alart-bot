@@ -347,7 +347,7 @@ export async function monitorActiveGroups(page: Page) {
     return;
   }
   
-  const keywordsList = activeKeywords.map(k => k.phrase);
+  const keywordsList = activeKeywords.map((k: any) => k.phrase);
   console.log(`[Group Scraper] Active keywords: ${keywordsList.join(', ')}`);
 
   const monitoredGroups = await prisma.monitoredGroup.findMany({

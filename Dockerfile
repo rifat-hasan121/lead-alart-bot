@@ -13,9 +13,9 @@ RUN npm ci
 COPY prisma ./prisma/
 COPY src ./src/
 
-# Compile TypeScript and generate Prisma Client
-RUN npm run build
+# Generate Prisma Client and compile TypeScript
 RUN npx prisma generate
+RUN npm run build
 
 # Run the compiled bot in production
 CMD ["node", "dist/index.js"]
