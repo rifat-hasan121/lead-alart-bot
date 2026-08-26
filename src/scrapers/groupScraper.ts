@@ -216,168 +216,195 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
     console.warn('[Group Scraper] Non-blocking warning: Could not adjust sorting dropdown selector:', e);
   }
 
-  // Human-like scrolling loop (scrolling down 3 times)
-  console.log('[Group Scraper] Scrolling down feed to fetch recent activity...');
-  const scrolls = 3;
-  for (let i = 0; i < scrolls; i++) {
-    const scrollAmount = Math.floor(Math.random() * 401) + 400; // random scroll step: 400px - 800px
-    await page.evaluate((y) => (globalThis as any).scrollBy(0, y), scrollAmount);
-    
-    // Human-like delay of 2 to 5 seconds
-    const delay = Math.floor(Math.random() * 3001) + 2000;
-    await sleep(delay);
-  }
+  const postsMap = new Map<string, ExtractedPost>();
+  let consecutiveOldPosts = 0;
+  const maxScrollPasses = 10;
 
-  const posts: ExtractedPost[] = [];
+  console.log('[Group Scraper] Starting incremental scroll and post evaluation...');
 
-  // Query post container articles
-  const articles = await page.$$('div[role="article"]');
-  console.log(`[Group Scraper] Found ${articles.length} article elements. Parsing posts...`);
+  for (let scrollPass = 1; scrollPass <= maxScrollPasses; scrollPass++) {
+    // Query post container articles
+    const articles = await page.$$('div[role="article"]');
+    console.log(`[Group Scraper] [Pass ${scrollPass}/${maxScrollPasses}] Found ${articles.length} article elements on page.`);
 
-  let oldPostCount = 0;
-
-  for (const article of articles) {
-    try {
-      // Ignore nested comment articles
-      const isNestedComment = await article.evaluate((node) => {
-        let parent = node.parentElement;
-        while (parent) {
-          if (parent.getAttribute('role') === 'article') {
-            return true;
+    for (const article of articles) {
+      try {
+        // Ignore nested comment articles
+        const isNestedComment = await article.evaluate((node) => {
+          let parent = node.parentElement;
+          while (parent) {
+            if (parent.getAttribute('role') === 'article') {
+              return true;
+            }
+            parent = parent.parentElement;
           }
-          parent = parent.parentElement;
+          return false;
+        });
+        if (isNestedComment) continue;
+
+        const links = await article.$$('a');
+        let postUrl = '';
+        let fbPostId = '';
+        let authorName = 'Unknown';
+        let timestampText = '';
+
+        // 1. Find the post ID, URL and raw timestamp text from permalink links
+        for (const link of links) {
+          const href = await link.getAttribute('href');
+          if (!href) continue;
+
+          const isPermalink = href.includes('/permalink/') || href.includes('/posts/') || href.includes('multi_permalinks=');
+          if (isPermalink && !postUrl) {
+            postUrl = href.split('?')[0]; // Strip tracking queries
+            
+            const permalinkMatch = href.match(/\/permalink\/(\d+)/);
+            const postsMatch = href.match(/\/posts\/(\d+)/);
+            const multiMatch = href.match(/multi_permalinks=(\d+)/);
+
+            if (permalinkMatch) {
+              fbPostId = permalinkMatch[1];
+            } else if (postsMatch) {
+              fbPostId = postsMatch[1];
+            } else if (multiMatch) {
+              fbPostId = multiMatch[1];
+            }
+
+            const ariaLabel = await link.getAttribute('aria-label');
+            const innerText = (await link.innerText()).trim();
+            timestampText = ariaLabel || innerText;
+          }
         }
-        return false;
-      });
-      if (isNestedComment) continue;
 
-      const links = await article.$$('a');
-      let postUrl = '';
-      let fbPostId = '';
-      let authorName = 'Unknown';
-      let timestampText = '';
+        // Skip parsing if we can't reliably isolate the Facebook Post ID or already processed
+        if (!fbPostId || postsMap.has(fbPostId)) continue;
 
-      // 1. Find the post ID, URL and raw timestamp text from permalink links
-      for (const link of links) {
-        const href = await link.getAttribute('href');
-        if (!href) continue;
+        // Fallback: check for standard <abbr> elements inside this article if timestampText is empty
+        if (!timestampText) {
+          const abbr = await article.$('abbr');
+          if (abbr) {
+            const innerText = (await abbr.innerText()).trim();
+            const titleText = await abbr.getAttribute('title');
+            timestampText = innerText || titleText || '';
+          }
+        }
 
-        const isPermalink = href.includes('/permalink/') || href.includes('/posts/') || href.includes('multi_permalinks=');
-        if (isPermalink && !postUrl) {
-          postUrl = href.split('?')[0]; // Strip tracking queries
+        // Parse timestamp into standardised Date object
+        const postCreatedAt = parseFacebookTimestamp(timestampText);
+        const ageInMs = Date.now() - postCreatedAt.getTime();
+        const ageInHours = ageInMs / (1000 * 60 * 60);
+
+        // AGE FILTER: Ignore if older than 24 hours (1 day)
+        if (ageInHours > 24) {
+          consecutiveOldPosts++;
+          console.log(`[Group Scraper] Skipping post ${fbPostId} - published ${ageInHours.toFixed(1)} hours ago (>24h). Consecutive old posts: ${consecutiveOldPosts}/5. Timestamp: "${timestampText}"`);
           
-          // Regex extraction for common post ID configurations
-          const permalinkMatch = href.match(/\/permalink\/(\d+)/);
-          const postsMatch = href.match(/\/posts\/(\d+)/);
-          const multiMatch = href.match(/multi_permalinks=(\d+)/);
-
-          if (permalinkMatch) {
-            fbPostId = permalinkMatch[1];
-          } else if (postsMatch) {
-            fbPostId = postsMatch[1];
-          } else if (multiMatch) {
-            fbPostId = multiMatch[1];
+          if (consecutiveOldPosts >= 5) {
+            console.log(`[Group Scraper] Reached 5 consecutive posts older than 24h. Stopping scroll and moving to next group.`);
+            break;
           }
-
-          // Extract timestamp text from permalink link
-          const ariaLabel = await link.getAttribute('aria-label');
-          const innerText = (await link.innerText()).trim();
-          timestampText = ariaLabel || innerText;
+          continue;
+        } else {
+          // Found a post within 24 hours, reset count
+          consecutiveOldPosts = 0;
         }
-      }
 
-      // Skip parsing if we can't reliably isolate the Facebook Post ID
-      if (!fbPostId) continue;
+        // Click "See more" if present to expand full post text
+        try {
+          const seeMoreBtn = await article.$('div[role="button"]:has-text("See more"), div[role="button"]:has-text("See More"), div[role="button"]:has-text("আরও দেখুন")');
+          if (seeMoreBtn) {
+            await seeMoreBtn.click();
+            await sleep(500);
+          }
+        } catch (e) {}
 
-      // Fallback: check for standard <abbr> elements inside this article if timestampText is empty
-      if (!timestampText) {
-        const abbr = await article.$('abbr');
-        if (abbr) {
-          const innerText = (await abbr.innerText()).trim();
-          const titleText = await abbr.getAttribute('title');
-          timestampText = innerText || titleText || '';
+        // 2. Find Author Name
+        for (const link of links) {
+          const text = (await link.innerText()).trim();
+          const href = await link.getAttribute('href');
+          if (!href) continue;
+
+          const isNotAuthorUrl = href.includes('/posts/') || href.includes('/permalink/') || href.includes('/groups/') || href.includes('/hashtag/');
+          if (text && !isNotAuthorUrl && authorName === 'Unknown') {
+            authorName = text;
+            break;
+          }
         }
-      }
 
-      // Parse timestamp into standardised Date object
-      const postCreatedAt = parseFacebookTimestamp(timestampText);
-      const ageInMs = Date.now() - postCreatedAt.getTime();
-      const ageInHours = ageInMs / (1000 * 60 * 60);
-
-      // AGE FILTER: Ignore if older than 24 hours (1 day)
-      if (ageInHours > 24) {
-        oldPostCount++;
-        console.log(`[Group Scraper] Skipping post ${fbPostId} - published ${ageInHours.toFixed(1)} hours ago (older than 24 hours). Timestamp: "${timestampText}"`);
-        
-        if (oldPostCount >= 5) {
-          console.log(`[Group Scraper] Reached 5 consecutive posts older than 24h. Stopping scroll for this group.`);
-          break;
-        }
-        continue;
-      } else {
-        oldPostCount = 0;
-      }
-
-      // 2. Find Author Name
-      for (const link of links) {
-        const text = (await link.innerText()).trim();
-        const href = await link.getAttribute('href');
-        if (!href) continue;
-
-        // Skip non-profile links
-        const isNotAuthorUrl = href.includes('/posts/') || href.includes('/permalink/') || href.includes('/groups/') || href.includes('/hashtag/');
-        if (text && !isNotAuthorUrl && authorName === 'Unknown') {
-          authorName = text;
-          break;
-        }
-      }
-
-      // 3. Extract Post Body content strictly (excluding comments)
-      let content = '';
-      const messageElem = await article.$('div[data-ad-preview="message"], div[data-ad-comet-preview="message"]');
-      if (messageElem) {
-        content = (await messageElem.innerText()).trim();
-      } else {
-        // Fallback: search div[dir="auto"] containers not inside comments
-        const textContainers = await article.$$('div[dir="auto"]');
-        for (const container of textContainers) {
-          const isInsideComment = await container.evaluate((node) => {
-            let p = node.parentElement;
-            while (p) {
-              const role = p.getAttribute('role');
-              const ariaLabel = (p.getAttribute('aria-label') || '').toLowerCase();
-              if ((role === 'article' && p !== node.closest('div[role="article"]')) || ariaLabel.includes('comment') || p.tagName === 'UL') {
-                return true;
+        // 3. Extract Post Body content strictly (excluding comments)
+        let content = '';
+        const messageElem = await article.$('div[data-ad-preview="message"], div[data-ad-comet-preview="message"]');
+        if (messageElem) {
+          content = (await messageElem.innerText()).trim();
+        } else {
+          const textContainers = await article.$$('div[dir="auto"]');
+          for (const container of textContainers) {
+            const isInsideComment = await container.evaluate((node) => {
+              let p = node.parentElement;
+              while (p) {
+                const role = p.getAttribute('role');
+                const ariaLabel = (p.getAttribute('aria-label') || '').toLowerCase();
+                if ((role === 'article' && p !== node.closest('div[role="article"]')) || ariaLabel.includes('comment') || p.tagName === 'UL') {
+                  return true;
+                }
+                p = p.parentElement;
               }
-              p = p.parentElement;
-            }
-            return false;
-          });
+              return false;
+            });
 
-          if (!isInsideComment) {
-            const text = (await container.innerText()).trim();
-            if (text && text.length > content.length) {
-              content = text;
+            if (!isInsideComment) {
+              const text = (await container.innerText()).trim();
+              if (text && text.length > content.length) {
+                content = text;
+              }
             }
           }
         }
+
+        if (!content) continue;
+
+        postsMap.set(fbPostId, {
+          fbPostId,
+          authorName,
+          content,
+          postUrl: postUrl || `${groupUrl}/posts/${fbPostId}`,
+          postCreatedAt,
+          rawTimestampText: timestampText,
+        });
+
+        console.log(`[Group Scraper] Extracted post ${fbPostId} by "${authorName}" (${ageInHours.toFixed(1)}h ago).`);
+      } catch (e) {
+        console.error('[Group Scraper] Error extracting post details:', e);
       }
-
-      if (!content) continue;
-
-      posts.push({
-        fbPostId,
-        authorName,
-        content,
-        postUrl: postUrl || `${groupUrl}/posts/${fbPostId}`,
-        postCreatedAt,
-        rawTimestampText: timestampText,
-      });
-    } catch (e) {
-      console.error('[Group Scraper] Error extracting post details:', e);
     }
+
+    if (consecutiveOldPosts >= 5) {
+      break;
+    }
+
+    // Scroll down feed using multiple methods (window, feed container, and PageDown keys) to trigger Facebook lazy loading
+    const scrollAmount = Math.floor(Math.random() * 401) + 600; // 600px - 1000px
+    await page.evaluate((y) => {
+      const g = globalThis as any;
+      if (g.scrollBy) g.scrollBy(0, y);
+      const feedContainer = g.document?.querySelector('div[role="feed"]');
+      if (feedContainer?.scrollBy) {
+        feedContainer.scrollBy(0, y);
+      }
+    }, scrollAmount);
+
+    try {
+      await page.mouse.wheel(0, 1000);
+      await sleep(500);
+      await page.keyboard.press('PageDown');
+      await sleep(500);
+      await page.keyboard.press('PageDown');
+    } catch (e) {}
+
+    await sleep(3000);
   }
 
+  const posts = Array.from(postsMap.values());
+  console.log(`[Group Scraper] Total recent candidate posts extracted from group: ${posts.length}`);
   return posts;
 }
 

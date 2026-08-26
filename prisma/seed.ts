@@ -5,9 +5,9 @@ async function main() {
   
   const roleKeywords = [
     // Bengali
-    'ওয়েবসাইট', 'ওয়েব সাইট', 'ওয়েব ডেভেলপার', 'সাইট', 'ফ্রন্টএন্ড', 'ল্যান্ডিং পেজ', 'ই-কমার্স', 'অনলাইন শপ', 'পোর্টাল', 'ওয়ার্ডপ্রেস', 'রিঅ্যাক্ট', 'ওয়েব ডিজাইন', 'রিডিজাইন', 'ওয়েব এপ্লিকেশন', 'বাগ ফিক্স',
+    'ওয়েবসাইট', 'ওয়েব সাইট', 'ওয়েব ডেভেলপার', 'ডেভেলপার', 'সাইট', 'ফ্রন্টএন্ড', 'ব্যাকএন্ড', 'ফুলস্ট্যাক', 'ল্যান্ডিং পেজ', 'ই-কমার্স', 'অনলাইন শপ', 'পোর্টাল', 'ওয়ার্ডপ্রেস', 'রিঅ্যাক্ট', 'ওয়েব ডিজাইন', 'রিডিজাইন', 'ওয়েব এপ্লিকেশন', 'বাগ ফিক্স',
     // English/Banglish
-    'website', 'web site', 'web developer', 'frontend', 'front-end', 'landing page', 'ecommerce', 'e-commerce', 'online store', 'wordpress', 'react', 'nextjs', 'web design', 'redesign', 'web app', 'web development', 'ui to code', 'figma to html', 'figma to react', 'bug fix', 'custom website'
+    'website', 'web site', 'web developer', 'developer', 'dev', 'frontend', 'front-end', 'backend', 'back-end', 'fullstack', 'full stack', 'landing page', 'ecommerce', 'e-commerce', 'online store', 'wordpress', 'react', 'nextjs', 'laravel', 'shopify', 'elementor', 'web design', 'redesign', 'web app', 'web development', 'ui to code', 'figma to html', 'figma to react', 'bug fix', 'custom website'
   ];
 
   const intentKeywords = [
@@ -18,7 +18,7 @@ async function main() {
   ];
 
   const negativeKeywords = [
-    'i am a web developer', 'i will build', 'available for work', 'offering service', 'hire me', 'service available', 'I\'ll build', 'I build', 'আমি ডেভেলপার', 'আমি ওয়েবসাইট বানিয়ে দেই', 'কাজ খুঁজছি', 'অফার চলছে', 'ডিসকাউন্ট চলছে'
+    'i am a web developer', 'i am a developer', 'i will build', 'available for work', 'offering service', 'hire me', 'service available', 'I\'ll build', 'I build', 'আমি ডেভেলপার', 'আমি ওয়েবসাইট বানিয়ে দেই', 'কাজ খুঁজছি', 'অফার চলছে', 'ডিসকাউন্ট চলছে'
   ];
 
   const allKeywords = [
@@ -30,7 +30,7 @@ async function main() {
   for (const item of allKeywords) {
     await prisma.keyword.upsert({
       where: { phrase: item.phrase },
-      update: { type: item.type, isActive: true }, // এখানে isActive: true নিশ্চিত করা হলো
+      update: { type: item.type, isActive: true },
       create: { phrase: item.phrase, type: item.type, isActive: true },
     });
   }

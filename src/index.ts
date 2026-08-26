@@ -31,10 +31,22 @@ async function main() {
     console.log(`\n[${new Date().toISOString()}] INFO: --- Starting check cycle ---`);
     
     try {
-      // 1. Fetch active keywords
-      const activeKeywords = await prisma.keyword.findMany({
-        where: { isActive: true },
-      });
+      // 1. Fetch active keywords with retry logic for cold-start database connections
+      let activeKeywords: any[] = [];
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          activeKeywords = await prisma.keyword.findMany({
+            where: { isActive: true },
+          });
+          break;
+        } catch (dbErr) {
+          retries--;
+          if (retries === 0) throw dbErr;
+          console.warn(`[${new Date().toISOString()}] WARN: Database connection retry (${3 - retries}/3)...`);
+          await sleep(2000);
+        }
+      }
       
       if (activeKeywords.length === 0) {
         console.warn(`[${new Date().toISOString()}] WARN: No active keywords found. Skipping this cycle.`);
