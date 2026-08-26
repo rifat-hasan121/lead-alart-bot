@@ -78,29 +78,17 @@ async function main() {
               for (const post of posts) {
                 const matchResult = checkLeadMatch(post.content, activeKeywords);
                 if (matchResult.isMatch) {
-                  // Check if already stored in database
+                  console.log(`[${new Date().toISOString()}] MATCH FOUND! Post ${post.fbPostId} matched roles: [${matchResult.matchedRoles.join(', ')}], intents: [${matchResult.matchedIntents.join(', ')}]`);
+                  
+                  // Check if already stored and notified in database
                   const existing = await prisma.trackedPost.findUnique({
                     where: { fbPostId: post.fbPostId },
                   });
                   
-                  if (!existing) {
-                    console.log(`[${new Date().toISOString()}] MATCH: Found new match! Saving lead: ${post.fbPostId}`);
+                  if (!existing || !existing.notifiedAt) {
+                    console.log(`[${new Date().toISOString()}] INFO: Sending Telegram alert for lead: ${post.fbPostId}`);
                     
-                    // Save to DB
-                    await prisma.trackedPost.create({
-                      data: {
-                        fbPostId: post.fbPostId,
-                        groupUrl: group.groupUrl,
-                        authorName: post.authorName,
-                        content: post.content,
-                        postUrl: post.postUrl,
-                        isMatched: true,
-                        postCreatedAt: post.postCreatedAt,
-                      },
-                    });
-                    
-                    // Trigger instant telegram alert
-                    await sendLeadAlert({
+                    const sent = await sendLeadAlert({
                       groupName: group.name,
                       groupUrl: group.groupUrl,
                       authorName: post.authorName,
@@ -110,6 +98,40 @@ async function main() {
                       postCreatedAt: post.postCreatedAt,
                       rawTimestampText: post.rawTimestampText,
                     });
+
+                    if (sent) {
+                      if (!existing) {
+                        await prisma.trackedPost.create({
+                          data: {
+                            fbPostId: post.fbPostId,
+                            groupUrl: group.groupUrl,
+                            authorName: post.authorName,
+                            content: post.content,
+                            postUrl: post.postUrl,
+                            isMatched: true,
+                            notifiedAt: new Date(),
+                            postCreatedAt: post.postCreatedAt,
+                          },
+                        });
+                      } else {
+                        await prisma.trackedPost.update({
+                          where: { id: existing.id },
+                          data: {
+                            isMatched: true,
+                            notifiedAt: new Date(),
+                          },
+                        });
+                      }
+                      console.log(`[${new Date().toISOString()}] SUCCESS: TrackedPost stored and Telegram alert sent for ${post.fbPostId}`);
+                    }
+                  } else {
+                    console.log(`[${new Date().toISOString()}] INFO: Lead ${post.fbPostId} was already notified on Telegram. Skipping duplicate alert.`);
+                  }
+                } else {
+                  if (matchResult.matchedNegatives.length > 0) {
+                    console.log(`[${new Date().toISOString()}] REJECTED: Post ${post.fbPostId} blocked by negative keywords: [${matchResult.matchedNegatives.join(', ')}]`);
+                  } else {
+                    console.log(`[${new Date().toISOString()}] NO MATCH: Post ${post.fbPostId} - Matched roles: ${matchResult.matchedRoles.length}, intents: ${matchResult.matchedIntents.length}`);
                   }
                 }
               }

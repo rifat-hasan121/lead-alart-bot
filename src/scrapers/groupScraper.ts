@@ -50,7 +50,18 @@ function parseTimePart(baseDate: Date, timeStr: string): Date | null {
  */
 export function parseFacebookTimestamp(text: string): Date {
   const now = new Date();
-  const cleanText = text.trim().toLowerCase();
+  if (!text) return now;
+
+  // Convert Bengali digits (০-৯) to English digits (0-9)
+  let cleanText = text.trim().toLowerCase()
+    .replace(/[০-৯]/g, (d) => '০১২৩৪৫৬৭৮৯'.indexOf(d).toString());
+
+  // Replace Bengali relative time terms
+  cleanText = cleanText
+    .replace(/মিনিট|মি/g, 'mins')
+    .replace(/ঘণ্টা|ঘন্টা|ঘ/g, 'hrs')
+    .replace(/দিন/g, 'days')
+    .replace(/গতকাল/g, 'yesterday');
 
   if (!cleanText || cleanText.includes('just now') || cleanText === 'now') {
     return now;
@@ -137,7 +148,12 @@ export function checkLeadMatch(content: string, keywords: KeywordInfo[]) {
   // 1. Check for negative keywords (Early exit if any match)
   const matchedNegatives = negativeKeywords.filter(kw => normalizedContent.includes(kw));
   if (matchedNegatives.length > 0) {
-    return { isMatch: false, matchedRoles: [], matchedIntents: [], matchedNegatives };
+    return {
+      isMatch: false,
+      matchedRoles: [],
+      matchedIntents: [],
+      matchedNegatives: keywords.filter(k => k.type === 'negative' && normalizedContent.includes(normalizeText(k.phrase))).map(k => k.phrase),
+    };
   }
 
   // 2. Check for role keywords
@@ -222,6 +238,19 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
 
   for (const article of articles) {
     try {
+      // Ignore nested comment articles
+      const isNestedComment = await article.evaluate((node) => {
+        let parent = node.parentElement;
+        while (parent) {
+          if (parent.getAttribute('role') === 'article') {
+            return true;
+          }
+          parent = parent.parentElement;
+        }
+        return false;
+      });
+      if (isNestedComment) continue;
+
       const links = await article.$$('a');
       let postUrl = '';
       let fbPostId = '';
@@ -303,14 +332,34 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
         }
       }
 
-      // 3. Find Post Text content
+      // 3. Extract Post Body content strictly (excluding comments)
       let content = '';
-      const textContainers = await article.$$('div[dir="auto"], div[data-ad-preview="message"]');
-      for (const container of textContainers) {
-        const text = (await container.innerText()).trim();
-        // Take the longest block of text in the post (usually the body)
-        if (text && text.length > content.length) {
-          content = text;
+      const messageElem = await article.$('div[data-ad-preview="message"], div[data-ad-comet-preview="message"]');
+      if (messageElem) {
+        content = (await messageElem.innerText()).trim();
+      } else {
+        // Fallback: search div[dir="auto"] containers not inside comments
+        const textContainers = await article.$$('div[dir="auto"]');
+        for (const container of textContainers) {
+          const isInsideComment = await container.evaluate((node) => {
+            let p = node.parentElement;
+            while (p) {
+              const role = p.getAttribute('role');
+              const ariaLabel = (p.getAttribute('aria-label') || '').toLowerCase();
+              if ((role === 'article' && p !== node.closest('div[role="article"]')) || ariaLabel.includes('comment') || p.tagName === 'UL') {
+                return true;
+              }
+              p = p.parentElement;
+            }
+            return false;
+          });
+
+          if (!isInsideComment) {
+            const text = (await container.innerText()).trim();
+            if (text && text.length > content.length) {
+              content = text;
+            }
+          }
         }
       }
 

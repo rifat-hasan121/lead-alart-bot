@@ -18,7 +18,7 @@ async function main() {
   ];
 
   const negativeKeywords = [
-    'i am a web developer', 'i will build', 'available for work', 'offering service', 'hire me', 'service available', 'আমি ডেভেলপার', 'আমি ওয়েবসাইট বানিয়ে দেই', 'কাজ খুঁজছি', 'অফার চলছে', 'ডিসকাউন্ট চলছে'
+    'i am a web developer', 'i will build', 'available for work', 'offering service', 'hire me', 'service available', 'I\'ll build', 'I build', 'আমি ডেভেলপার', 'আমি ওয়েবসাইট বানিয়ে দেই', 'কাজ খুঁজছি', 'অফার চলছে', 'ডিসকাউন্ট চলছে'
   ];
 
   const allKeywords = [
