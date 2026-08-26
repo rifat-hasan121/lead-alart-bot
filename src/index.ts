@@ -10,10 +10,20 @@ async function main() {
 
   // Start lightweight HTTP health check server for Render.com
   const PORT = process.env.PORT || 3000;
-  http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));
-  }).listen(PORT, () => {
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[${new Date().toISOString()}] WARN: Port ${PORT} is already in use. Skipping server listen, bot will continue running.`);
+    } else {
+      console.error(`[${new Date().toISOString()}] ERROR: Health check server error:`, err);
+    }
+  });
+
+  server.listen(PORT, () => {
     console.log(`[${new Date().toISOString()}] INFO: Health Check Server listening on port ${PORT}`);
   });
   
