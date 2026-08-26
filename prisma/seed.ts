@@ -12,9 +12,9 @@ async function main() {
 
   const intentKeywords = [
     // Bengali
-    'লাগবে', 'খুঁজছি', 'চাই', 'দরকার', 'চাচ্ছিলাম', 'করতে হবে', 'বানিয়ে দিতে হবে', 'বানাতে চাই', 'বানাতে পারি এমন কেউ', 'তৈরি করতে চাই', 'হায়ার করতে চাই', 'ইনবক্স করুন', 'ইনবক্স দিন', 'ইনবক্সে আসেন', 'বাজেট কত', 'প্রাইস কত', 'খরচ কেমন হবে', 'পোর্টফোলিও দিন', 'ডেমো দিন', 'কোটেশন দিন', 'প্রস্তাব পাঠান', 'কে কে পারেন',
+    'লাগবে', 'খুঁজছি', 'চাই', 'দরকার', 'চাচ্ছিলাম', 'করতে হবে', 'বানিয়ে দিতে হবে', 'বানাতে চাই', 'বানাতে পারি এমন কেউ', 'তৈরি করতে চাই', 'হায়ার করতে চাই', 'ইনবক্স করুন', 'ইনবক্স দিন', 'ইনবক্সে আসেন', 'ইনবক্স', 'নক', 'বাজেট কত', 'প্রাইস কত', 'খরচ কেমন হবে', 'পোর্টফোলিও দিন', 'ডেমো দিন', 'কোটেশন দিন', 'প্রস্তাব পাঠান', 'কে কে পারেন', 'কে কে পারবেন', 'পারবেন', 'প্রয়োজন', 'প্রয়োজন', 'কাজ', 'প্রজেক্ট', 'যোগাযোগ', 'বিস্তারিত', 'কাউকে', 'কেউ',
     // English/Banglish
-    'needed', 'need', 'looking for', 'hiring', 'hire', 'require', 'required', 'urgent', 'urgently needed', 'dm me', 'inbox me', 'send portfolio', 'send cv', 'drop portfolio', 'quote please', 'budget', 'lagbe', 'khujchi', 'chai', 'chacchilam', 'dorkar', 'banate chai', 'kore dite parben', 'kew ki achen', 'keu ki paren', 'inbox koren', 'dm koren'
+    'needed', 'need', 'looking for', 'hiring', 'hire', 'require', 'required', 'urgent', 'urgently needed', 'dm me', 'inbox me', 'inbox', 'dm', 'pm', 'pm me', 'knock', 'send portfolio', 'send cv', 'drop portfolio', 'quote please', 'budget', 'lagbe', 'khujchi', 'chai', 'chacchilam', 'dorkar', 'banate chai', 'kore dite parben', 'kew ki achen', 'keu ki paren', 'inbox koren', 'dm koren', 'hobe', 'proyojon', 'work', 'project', 'client', 'details', 'bistarito'
   ];
 
   const negativeKeywords = [
@@ -28,11 +28,21 @@ async function main() {
   ];
 
   for (const item of allKeywords) {
-    await prisma.keyword.upsert({
-      where: { phrase: item.phrase },
-      update: { type: item.type, isActive: true },
-      create: { phrase: item.phrase, type: item.type, isActive: true },
-    });
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await prisma.keyword.upsert({
+          where: { phrase: item.phrase },
+          update: { type: item.type, isActive: true },
+          create: { phrase: item.phrase, type: item.type, isActive: true },
+        });
+        break;
+      } catch (e) {
+        retries--;
+        if (retries === 0) throw e;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
   }
 
   console.log('Seeding sample monitored groups...');
