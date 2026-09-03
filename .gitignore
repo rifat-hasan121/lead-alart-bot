@@ -1,14 +1,12 @@
 node_modules/
 dist/
-
-# Environment files
 .env
-.env.local
-.env.*
-!.env.example
-
 cookies.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+dev.db
+*.db
+*.db-journal
+

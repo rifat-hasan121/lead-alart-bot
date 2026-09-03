@@ -15,13 +15,14 @@ export interface LeadAlertData {
 }
 
 /**
- * Escapes characters that interfere with Telegram's Markdown parsing.
+ * Escapes characters that interfere with Telegram's HTML parsing.
  */
-function escapeMarkdown(text: string): string {
+function escapeHtml(text: string): string {
+  if (!text) return '';
   return text
-    .replace(/\*/g, '\\*')
-    .replace(/_/g, '\\_')
-    .replace(/`/g, '\\`');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**
@@ -40,7 +41,7 @@ function formatDate(date: Date): string {
 }
 
 /**
- * Formats and sends a markdown lead alert to Telegram.
+ * Formats and sends an HTML lead alert to Telegram.
  */
 export async function sendLeadAlert(data: LeadAlertData): Promise<boolean> {
   if (!config.telegramBotToken || !config.telegramChatId) {
@@ -48,16 +49,13 @@ export async function sendLeadAlert(data: LeadAlertData): Promise<boolean> {
     return false;
   }
 
-  const snippet = data.content.length > 200 
-    ? `${data.content.substring(0, 200)}...` 
+  const snippet = data.content.length > 300 
+    ? `${data.content.substring(0, 300)}...` 
     : data.content;
 
-  const escapedGroupName = escapeMarkdown(data.groupName);
-  const escapedAuthorName = escapeMarkdown(data.authorName);
-  const escapedKeywords = data.matchedKeywords.map(escapeMarkdown).join(', ');
-  const escapedSnippet = escapeMarkdown(snippet);
+  const matchedKeywordsStr = data.matchedKeywords.join(', ');
 
-  let timeStr = 'Unknown';
+  let timeStr = 'Recent';
   if (data.postCreatedAt) {
     const formattedDate = formatDate(data.postCreatedAt);
     timeStr = data.rawTimestampText 
@@ -66,20 +64,20 @@ export async function sendLeadAlert(data: LeadAlertData): Promise<boolean> {
   }
 
   const message = [
-    `🚨 *New Web Lead Found!*`,
+    `🚨 <b>New Web Lead Found!</b>`,
     ``,
-    `👥 *Group:* [${escapedGroupName}](${data.groupUrl})`,
-    `👤 *Author:* ${escapedAuthorName}`,
-    `🕒 *Posted At:* ${escapeMarkdown(timeStr)}`,
-    `🔍 *Matched Keywords:* \`${escapedKeywords}\``,
-    `📝 *Snippet:* _"${escapedSnippet}"_`,
+    `👥 <b>Group:</b> <a href="${data.groupUrl}">${escapeHtml(data.groupName)}</a>`,
+    `👤 <b>Author:</b> ${escapeHtml(data.authorName)}`,
+    `🕒 <b>Posted At:</b> ${escapeHtml(timeStr)}`,
+    `🔍 <b>Matched Keywords:</b> <code>${escapeHtml(matchedKeywordsStr)}</code>`,
+    `📝 <b>Snippet:</b> <i>"${escapeHtml(snippet)}"</i>`,
     ``,
-    `🔗 *Direct Post Link:* [Open Post on Facebook](${data.postUrl})`
+    `🔗 <b>Direct Post Link:</b> <a href="${data.postUrl}">Open Post on Facebook</a>`
   ].join('\n');
 
   try {
     await telegram.sendMessage(config.telegramChatId, message, {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
     });
     console.log(`[Telegram Service] Alert sent successfully for lead: ${data.postUrl}`);

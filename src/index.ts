@@ -150,10 +150,11 @@ async function main() {
                     console.log(`[${new Date().toISOString()}] INFO: Lead ${post.fbPostId} was already notified on Telegram. Skipping duplicate alert.`);
                   }
                 } else {
+                  const snippet = post.content.replace(/\s+/g, ' ').substring(0, 60);
                   if (matchResult.matchedNegatives.length > 0) {
-                    console.log(`[${new Date().toISOString()}] REJECTED: Post ${post.fbPostId} blocked by negative keywords: [${matchResult.matchedNegatives.join(', ')}]`);
+                    console.log(`[${new Date().toISOString()}] REJECTED: Post ${post.fbPostId} blocked by negative keywords: [${matchResult.matchedNegatives.join(', ')}]. Snippet: "${snippet}..."`);
                   } else {
-                    console.log(`[${new Date().toISOString()}] NO MATCH: Post ${post.fbPostId} - Matched roles: ${matchResult.matchedRoles.length}, intents: ${matchResult.matchedIntents.length}`);
+                    console.log(`[${new Date().toISOString()}] NO MATCH: Post ${post.fbPostId} - Matched roles: [${matchResult.matchedRoles.join(', ')}], intents: [${matchResult.matchedIntents.join(', ')}]. Snippet: "${snippet}..."`);
                   }
                 }
               }

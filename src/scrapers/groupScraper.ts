@@ -253,13 +253,14 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
           const href = await link.getAttribute('href');
           if (!href) continue;
 
-          const isPermalink = href.includes('/permalink/') || href.includes('/posts/') || href.includes('multi_permalinks=');
+          const isPermalink = href.includes('/permalink/') || href.includes('/posts/') || href.includes('multi_permalinks=') || href.includes('story_fbid=');
           if (isPermalink && !postUrl) {
             postUrl = href.split('?')[0]; // Strip tracking queries
             
-            const permalinkMatch = href.match(/\/permalink\/(\d+)/);
-            const postsMatch = href.match(/\/posts\/(\d+)/);
-            const multiMatch = href.match(/multi_permalinks=(\d+)/);
+            const permalinkMatch = href.match(/\/permalink\/([a-zA-Z0-9_-]+)/);
+            const postsMatch = href.match(/\/posts\/([a-zA-Z0-9_-]+)/);
+            const multiMatch = href.match(/multi_permalinks=([a-zA-Z0-9_-]+)/);
+            const storyMatch = href.match(/story_fbid=([a-zA-Z0-9_-]+)/);
 
             if (permalinkMatch) {
               fbPostId = permalinkMatch[1];
@@ -267,6 +268,8 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
               fbPostId = postsMatch[1];
             } else if (multiMatch) {
               fbPostId = multiMatch[1];
+            } else if (storyMatch) {
+              fbPostId = storyMatch[1];
             }
 
             const ariaLabel = await link.getAttribute('aria-label');
@@ -293,13 +296,21 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
         const ageInMs = Date.now() - postCreatedAt.getTime();
         const ageInHours = ageInMs / (1000 * 60 * 60);
 
+        // Check if post is pinned/featured
+        const isPinned = await article.evaluate((node) => {
+          const text = (node.innerText || '').toLowerCase();
+          return text.includes('pinned post') || text.includes('featured') || text.includes('pin') || text.includes('পিন');
+        });
+
         // AGE FILTER: Ignore if older than 24 hours (1 day)
         if (ageInHours > 24) {
-          consecutiveOldPosts++;
-          console.log(`[Group Scraper] Skipping post ${fbPostId} - published ${ageInHours.toFixed(1)} hours ago (>24h). Consecutive old posts: ${consecutiveOldPosts}/5. Timestamp: "${timestampText}"`);
+          if (!isPinned) {
+            consecutiveOldPosts++;
+          }
+          console.log(`[Group Scraper] Skipping post ${fbPostId} - published ${ageInHours.toFixed(1)} hours ago (>24h). Consecutive old posts: ${consecutiveOldPosts}/10. Timestamp: "${timestampText}"`);
           
-          if (consecutiveOldPosts >= 5) {
-            console.log(`[Group Scraper] Reached 5 consecutive posts older than 24h. Stopping scroll and moving to next group.`);
+          if (consecutiveOldPosts >= 10 && scrollPass >= 2) {
+            console.log(`[Group Scraper] Reached 10 consecutive posts older than 24h. Stopping scroll and moving to next group.`);
             break;
           }
           continue;
@@ -377,7 +388,7 @@ export async function scrapeGroupFeed(page: Page, groupUrl: string): Promise<Ext
       }
     }
 
-    if (consecutiveOldPosts >= 5) {
+    if (consecutiveOldPosts >= 10 && scrollPass >= 2) {
       break;
     }
 
